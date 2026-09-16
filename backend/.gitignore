@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+results/*.json
+results/*.csv
+weights/*.pt
+.env
+venv/
