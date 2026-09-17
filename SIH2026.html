@@ -1,0 +1,1858 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AquaVision AI - Marine Debris & Anomaly Detection System</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.0/jspdf.umd.min.js"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        navy: {
+                            950: '#070b12',
+                            900: '#0d1527',
+                            800: '#14223d',
+                            700: '#1d3154',
+                            600: '#284370',
+                        },
+                        cyan: {
+                            400: '#38bdf8',
+                            500: '#06b6d4',
+                            accent: '#00f2fe'
+                        },
+                        emerald: {
+                            accent: '#00f5a0'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        @keyframes radar-sweep {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .radar-sweeper {
+            animation: radar-sweep 4s linear infinite;
+        }
+
+        @keyframes waterfall-scroll {
+            0% { background-position: 0 0; }
+            100% { background-position: 0 1000px; }
+        }
+
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #0d1527;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #1d3154;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #06b6d4;
+        }
+
+        .leaflet-container {
+            background: #070b12 !important;
+            font-family: inherit;
+        }
+
+        body {
+            background: radial-gradient(circle at top, rgba(6, 182, 212, 0.08), transparent 20%), linear-gradient(180deg, #070b12 0%, #0d1527 100%);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        .app-shell {
+            display: flex;
+            min-height: 100vh;
+            width: 100%;
+        }
+
+        .sidebar {
+            position: sticky;
+            top: 0;
+            width: 260px;
+            min-width: 260px;
+            height: 100vh;
+            background: rgba(9, 16, 27, 0.96);
+            border-right: 1px solid rgba(34, 211, 238, 0.18);
+            display: flex;
+            flex-direction: column;
+            padding: 1.2rem 0.9rem 1rem;
+            transition: width 0.25s ease, min-width 0.25s ease, transform 0.25s ease;
+            z-index: 40;
+        }
+
+        .sidebar.collapsed {
+            width: 84px;
+            min-width: 84px;
+        }
+
+        .sidebar-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.35rem 0.5rem 1rem;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+            margin-bottom: 1rem;
+        }
+
+        .sidebar-brand {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            overflow: hidden;
+        }
+
+        .brand-icon {
+            width: 2.6rem;
+            height: 2.6rem;
+            border-radius: 0.8rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(34, 211, 238, 0.12);
+            border: 1px solid rgba(34, 211, 238, 0.28);
+            color: #67e8f9;
+            box-shadow: 0 0 18px rgba(34, 211, 238, 0.15);
+        }
+
+        .brand-text {
+            display: flex;
+            flex-direction: column;
+            white-space: nowrap;
+        }
+
+        .brand-text strong {
+            font-size: 0.95rem;
+            font-weight: 800;
+            letter-spacing: 0.02em;
+            color: #f8fafc;
+        }
+
+        .brand-text span {
+            font-size: 0.62rem;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            color: rgba(148, 163, 184, 0.8);
+        }
+
+        .sidebar-nav {
+            display: flex;
+            flex-direction: column;
+            gap: 0.35rem;
+            margin-top: 0.4rem;
+        }
+
+        .nav-item {
+            width: 100%;
+            border: 1px solid transparent;
+            background: transparent;
+            color: #cbd5e1;
+            text-align: left;
+            display: flex;
+            align-items: center;
+            gap: 0.8rem;
+            padding: 0.8rem 0.9rem;
+            border-radius: 0.8rem;
+            transition: 0.2s ease;
+            font-size: 0.78rem;
+            font-weight: 600;
+            letter-spacing: 0.02em;
+        }
+
+        .nav-item:hover {
+            background: rgba(15, 23, 42, 0.9);
+            border-color: rgba(34, 211, 238, 0.12);
+            color: #f8fafc;
+        }
+
+        .nav-item.active {
+            background: linear-gradient(90deg, rgba(34, 211, 238, 0.12), rgba(6, 182, 212, 0.04));
+            border-color: rgba(34, 211, 238, 0.28);
+            color: #67e8f9;
+            box-shadow: inset 0 0 0 1px rgba(34, 211, 238, 0.1);
+        }
+
+        .nav-item i {
+            width: 1rem;
+            height: 1rem;
+            flex-shrink: 0;
+        }
+
+        .nav-label {
+            white-space: nowrap;
+            overflow: hidden;
+            transition: opacity 0.2s ease;
+        }
+
+        .sidebar.collapsed .nav-label,
+        .sidebar.collapsed .brand-text,
+        .sidebar.collapsed .sidebar-footer span:not(.live-indicator),
+        .sidebar.collapsed .sidebar-footer strong {
+            opacity: 0;
+            width: 0;
+            pointer-events: none;
+        }
+
+        .sidebar.collapsed .nav-item {
+            justify-content: center;
+            padding-left: 0.5rem;
+            padding-right: 0.5rem;
+        }
+
+        .sidebar-footer {
+            margin-top: auto;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.9rem 0.7rem 0.4rem;
+            border-top: 1px solid rgba(148, 163, 184, 0.12);
+            color: #cbd5e1;
+            font-size: 0.7rem;
+        }
+
+        .live-indicator {
+            position: relative;
+            display: inline-flex;
+            width: 0.65rem;
+            height: 0.65rem;
+            border-radius: 999px;
+            background: #34d399;
+            box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.5);
+            animation: pulse-live 1.8s infinite;
+        }
+
+        @keyframes pulse-live {
+            0% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.5); }
+            70% { box-shadow: 0 0 0 8px rgba(52, 211, 153, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0); }
+        }
+
+        .app-main {
+            flex: 1;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            background: rgba(3, 7, 18, 0.2);
+        }
+
+        .topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            padding: 0.9rem 1.1rem 0.85rem 1.1rem;
+            border-bottom: 1px solid rgba(34, 211, 238, 0.14);
+            background: rgba(13, 21, 39, 0.82);
+            backdrop-filter: blur(10px);
+            position: sticky;
+            top: 0;
+            z-index: 30;
+        }
+
+        .topbar-left {
+            display: flex;
+            align-items: center;
+            gap: 0.85rem;
+            min-width: 0;
+        }
+
+        .sidebar-toggle {
+            width: 2.3rem;
+            height: 2.3rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 0.7rem;
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            background: rgba(15, 23, 42, 0.9);
+            color: #e2e8f0;
+        }
+
+        .topbar-text {
+            min-width: 0;
+        }
+
+        .topbar-kicker {
+            display: block;
+            font-size: 0.62rem;
+            letter-spacing: 0.16em;
+            text-transform: uppercase;
+            color: rgba(103, 232, 249, 0.9);
+            margin-bottom: 0.12rem;
+        }
+
+        .topbar-text h2 {
+            margin: 0;
+            font-size: clamp(1.05rem, 1.4vw, 1.5rem);
+            font-weight: 800;
+            color: #f8fafc;
+            letter-spacing: -0.02em;
+        }
+
+        .topbar-actions {
+            display: flex;
+            align-items: center;
+            gap: 0.7rem;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+
+        .status-chip {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: rgba(15, 23, 42, 0.9);
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            border-radius: 0.7rem;
+            padding: 0.48rem 0.7rem;
+            font-size: 0.68rem;
+            color: #dbeafe;
+            white-space: nowrap;
+        }
+
+        .status-chip strong {
+            color: #67e8f9;
+            font-weight: 700;
+        }
+
+        .export-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.55rem;
+            background: linear-gradient(180deg, #22d3ee, #06b6d4);
+            color: #082f49;
+            border: none;
+            border-radius: 0.75rem;
+            padding: 0.66rem 0.9rem;
+            font-size: 0.78rem;
+            font-weight: 800;
+            box-shadow: 0 10px 20px rgba(34, 211, 238, 0.2);
+        }
+
+        .workspace-shell {
+            padding: 1rem 1rem 1.3rem;
+            overflow: auto;
+            min-height: 0;
+            flex: 1;
+        }
+
+        .app-view {
+            display: none;
+            min-height: 100%;
+        }
+
+        .app-view.active {
+            display: block;
+        }
+
+        #map {
+            width: 100% !important;
+            min-width: 100%;
+            min-height: 220px;
+            height: 100%;
+            border-radius: 0.75rem;
+        }
+
+        .leaflet-container {
+            width: 100% !important;
+            min-height: 220px;
+            height: 100% !important;
+        }
+
+        .page-panel {
+            background: rgba(13, 21, 39, 0.7);
+            border: 1px solid rgba(148, 163, 184, 0.12);
+            border-radius: 1rem;
+            padding: 1rem;
+            box-shadow: 0 14px 28px rgba(2, 6, 23, 0.32);
+        }
+
+        .page-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.8rem;
+            margin-bottom: 1rem;
+        }
+
+        .page-header h3 {
+            margin: 0;
+            font-size: 1.15rem;
+            font-weight: 800;
+            color: #f8fafc;
+        }
+
+        .page-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
+            padding: 0.42rem 0.7rem;
+            border-radius: 999px;
+            border: 1px solid rgba(34, 211, 238, 0.2);
+            background: rgba(34, 211, 238, 0.08);
+            color: #67e8f9;
+            font-size: 0.68rem;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+        }
+
+        .modal-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(2, 6, 23, 0.78);
+            backdrop-filter: blur(6px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+            z-index: 100;
+        }
+
+        .modal-backdrop.open {
+            display: flex;
+        }
+
+        .modal-card {
+            width: min(560px, 92vw);
+            background: rgba(9, 16, 27, 0.96);
+            border: 1px solid rgba(34, 211, 238, 0.18);
+            border-radius: 1rem;
+            box-shadow: 0 24px 50px rgba(2, 6, 23, 0.6);
+            overflow: hidden;
+        }
+
+        .modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 1rem 1.1rem;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+        }
+
+        .modal-header h4 {
+            margin: 0;
+            color: #f8fafc;
+            font-size: 1.05rem;
+            font-weight: 800;
+        }
+
+        .modal-close {
+            width: 2rem;
+            height: 2rem;
+            border-radius: 0.7rem;
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            background: rgba(15, 23, 42, 0.85);
+            color: #cbd5e1;
+        }
+
+        .modal-body {
+            padding: 1.1rem;
+            color: #cbd5e1;
+        }
+
+        .report-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.75rem;
+            margin-top: 0.8rem;
+        }
+
+        .report-metric {
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid rgba(148, 163, 184, 0.12);
+            border-radius: 0.8rem;
+            padding: 0.9rem;
+        }
+
+        .report-metric small {
+            display: block;
+            font-size: 0.62rem;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: rgba(148, 163, 184, 0.9);
+            margin-bottom: 0.3rem;
+        }
+
+        .report-metric strong {
+            color: #f8fafc;
+            font-size: 1.2rem;
+        }
+
+        .report-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 0.7rem;
+            margin-top: 1rem;
+        }
+
+        .secondary-btn,
+        .primary-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0.75rem 1rem;
+            border-radius: 0.8rem;
+            font-size: 0.78rem;
+            font-weight: 700;
+        }
+
+        .secondary-btn {
+            background: rgba(15, 23, 42, 0.9);
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            color: #e2e8f0;
+        }
+
+        .primary-btn {
+            background: linear-gradient(180deg, #22d3ee, #06b6d4);
+            border: none;
+            color: #082f49;
+        }
+
+        .upload-dropzone {
+            border: 1px dashed rgba(34, 211, 238, 0.35);
+            border-radius: 1rem;
+            background: rgba(15, 23, 42, 0.72);
+            padding: 1.3rem 1rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 0.75rem;
+            text-align: center;
+        }
+
+        .upload-dropzone .icon-wrap {
+            width: 3.2rem;
+            height: 3.2rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 1rem;
+            background: rgba(34, 211, 238, 0.1);
+            border: 1px solid rgba(34, 211, 238, 0.3);
+            color: #67e8f9;
+        }
+
+        .upload-file-meta {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 0.6rem;
+            margin-top: 0.5rem;
+            color: rgba(148, 163, 184, 0.9);
+            font-size: 0.74rem;
+        }
+
+        .file-upload-inline {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 0.8rem;
+            background: rgba(14, 116, 144, 0.12);
+            border: 1px solid rgba(34, 211, 238, 0.3);
+            color: #67e8f9;
+            padding: 0.7rem 1rem;
+            font-size: 0.75rem;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .file-upload-inline input {
+            display: none;
+        }
+
+        #sonarPageHost,
+        #mapPageHost,
+        #registerPageHost {
+            min-height: 420px;
+        }
+
+        .page-panel {
+            background: rgba(13, 21, 39, 0.7);
+            border: 1px solid rgba(148, 163, 184, 0.12);
+            border-radius: 1rem;
+            padding: 1rem;
+            box-shadow: 0 14px 28px rgba(2, 6, 23, 0.32);
+        }
+
+        .page-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.8rem;
+            margin-bottom: 1rem;
+        }
+
+        .page-header h3 {
+            margin: 0;
+            font-size: 1.15rem;
+            font-weight: 800;
+            color: #f8fafc;
+        }
+
+        .page-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
+            padding: 0.42rem 0.7rem;
+            border-radius: 999px;
+            border: 1px solid rgba(34, 211, 238, 0.2);
+            background: rgba(34, 211, 238, 0.08);
+            color: #67e8f9;
+            font-size: 0.68rem;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+        }
+
+        .modal-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(2, 6, 23, 0.78);
+            backdrop-filter: blur(6px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+            z-index: 100;
+        }
+
+        .modal-backdrop.open {
+            display: flex;
+        }
+
+        .modal-card {
+            width: min(560px, 92vw);
+            background: rgba(9, 16, 27, 0.96);
+            border: 1px solid rgba(34, 211, 238, 0.18);
+            border-radius: 1rem;
+            box-shadow: 0 24px 50px rgba(2, 6, 23, 0.6);
+            overflow: hidden;
+        }
+
+        .modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 1rem 1.1rem;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+        }
+
+        .modal-header h4 {
+            margin: 0;
+            color: #f8fafc;
+            font-size: 1.05rem;
+            font-weight: 800;
+        }
+
+        .modal-close {
+            width: 2rem;
+            height: 2rem;
+            border-radius: 0.7rem;
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            background: rgba(15, 23, 42, 0.85);
+            color: #cbd5e1;
+        }
+
+        .modal-body {
+            padding: 1.1rem;
+            color: #cbd5e1;
+        }
+
+        .report-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.75rem;
+            margin-top: 0.8rem;
+        }
+
+        .report-metric {
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid rgba(148, 163, 184, 0.12);
+            border-radius: 0.8rem;
+            padding: 0.9rem;
+        }
+
+        .report-metric small {
+            display: block;
+            font-size: 0.62rem;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: rgba(148, 163, 184, 0.9);
+            margin-bottom: 0.3rem;
+        }
+
+        .report-metric strong {
+            color: #f8fafc;
+            font-size: 1.2rem;
+        }
+
+        .report-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 0.7rem;
+            margin-top: 1rem;
+        }
+
+        .secondary-btn,
+        .primary-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0.75rem 1rem;
+            border-radius: 0.8rem;
+            font-size: 0.78rem;
+            font-weight: 700;
+        }
+
+        .secondary-btn {
+            background: rgba(15, 23, 42, 0.9);
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            color: #e2e8f0;
+        }
+
+        .primary-btn {
+            background: linear-gradient(180deg, #22d3ee, #06b6d4);
+            border: none;
+            color: #082f49;
+        }
+
+        .upload-dropzone {
+            border: 1px dashed rgba(34, 211, 238, 0.35);
+            border-radius: 1rem;
+            background: rgba(15, 23, 42, 0.72);
+            padding: 1.3rem 1rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 0.75rem;
+            text-align: center;
+        }
+
+        .upload-dropzone .icon-wrap {
+            width: 3.2rem;
+            height: 3.2rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 1rem;
+            background: rgba(34, 211, 238, 0.1);
+            border: 1px solid rgba(34, 211, 238, 0.3);
+            color: #67e8f9;
+        }
+
+        .upload-file-meta {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 0.6rem;
+            margin-top: 0.5rem;
+            color: rgba(148, 163, 184, 0.9);
+            font-size: 0.74rem;
+        }
+
+        .file-upload-inline {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 0.8rem;
+            background: rgba(14, 116, 144, 0.12);
+            border: 1px solid rgba(34, 211, 238, 0.3);
+            color: #67e8f9;
+            padding: 0.7rem 1rem;
+            font-size: 0.75rem;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .file-upload-inline input {
+            display: none;
+        }
+
+        .main-dashboard {
+            min-height: 0;
+        }
+
+        .sonar-panel {
+            min-height: 0;
+        }
+
+        .map-panel {
+            min-height: 230px;
+            height: clamp(230px, 30vh, 290px);
+        }
+
+        .sonar-stream {
+            min-height: 360px;
+            height: clamp(360px, 44vh, 470px);
+        }
+
+        .right-stack {
+            min-height: 0;
+        }
+
+        .detection-panel {
+            min-height: 0;
+            flex: 1 1 auto;
+        }
+
+        body[data-view="dashboard"] .app-view.dashboard-page,
+        body[data-view="dashboard"] .app-view.dashboard-page .app-page-content {
+            display: block;
+        }
+
+        body[data-view="sonar"] .app-view.dashboard-page,
+        body[data-view="map"] .app-view.dashboard-page,
+        body[data-view="register"] .app-view.dashboard-page {
+            display: block;
+        }
+
+        body[data-view="sonar"] .app-view.dashboard-page .main-dashboard {
+            grid-template-columns: 1fr;
+        }
+
+        body[data-view="sonar"] .app-view.dashboard-page .right-stack {
+            display: none !important;
+        }
+
+        body[data-view="map"] .app-view.dashboard-page .main-dashboard {
+            grid-template-columns: 1fr;
+        }
+
+        body[data-view="map"] .app-view.dashboard-page .sonar-panel {
+            display: none !important;
+        }
+
+        body[data-view="map"] .app-view.dashboard-page .right-stack {
+            display: flex !important;
+            width: 100%;
+        }
+
+        body[data-view="register"] .app-view.dashboard-page .main-dashboard {
+            grid-template-columns: 1fr;
+        }
+
+        body[data-view="register"] .app-view.dashboard-page .sonar-panel,
+        body[data-view="register"] .app-view.dashboard-page .map-panel {
+            display: none !important;
+        }
+
+        body[data-view="register"] .app-view.dashboard-page .right-stack {
+            display: flex !important;
+            width: 100%;
+        }
+
+        @media (min-width: 1024px) {
+            .main-dashboard {
+                grid-template-columns: minmax(0, 1.75fr) minmax(290px, 0.95fr);
+                gap: 0.9rem;
+            }
+
+            .sonar-stream {
+                min-height: 380px;
+                height: clamp(380px, 50vh, 500px);
+            }
+
+            .map-panel {
+                min-height: 240px;
+                height: clamp(240px, 28vh, 300px);
+            }
+        }
+
+        @media (max-width: 980px) {
+            .sidebar {
+                position: fixed;
+                left: 0;
+                transform: translateX(-100%);
+                box-shadow: 0 18px 50px rgba(2, 6, 23, 0.7);
+            }
+
+            .sidebar.open {
+                transform: translateX(0);
+            }
+
+            .app-main {
+                width: 100%;
+            }
+
+            .topbar {
+                padding-left: 0.8rem;
+            }
+        }
+
+        @media (max-width: 640px) {
+            .topbar {
+                flex-wrap: wrap;
+            }
+
+            .topbar-actions {
+                width: 100%;
+                justify-content: flex-start;
+            }
+
+            .status-chip {
+                display: none;
+            }
+
+            .workspace-shell {
+                padding: 0.8rem;
+            }
+
+            .page-header {
+                flex-wrap: wrap;
+            }
+        }
+    </style>
+</head>
+
+<body class="bg-navy-950 text-slate-100 min-h-screen flex flex-col font-sans antialiased selection:bg-cyan-500 selection:text-slate-900" data-view="dashboard">
+    <div class="app-shell">
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-brand">
+                    <div class="brand-icon">
+                        <i data-lucide="waves" class="w-5 h-5"></i>
+                    </div>
+                    <div class="brand-text">
+                        <strong>AquaVision AI</strong>
+                        <span>Marine Ops</span>
+                    </div>
+                </div>
+                <button class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle sidebar">
+                    <i data-lucide="panel-left" class="w-4 h-4"></i>
+                </button>
+            </div>
+
+            <nav class="sidebar-nav" aria-label="Sidebar navigation">
+                <button class="nav-item active" data-view="dashboard">
+                    <i data-lucide="layout-grid"></i>
+                    <span class="nav-label">Dashboard</span>
+                </button>
+                <button class="nav-item" data-view="sonar">
+                    <i data-lucide="radar"></i>
+                    <span class="nav-label">Sonar Analysis</span>
+                </button>
+                <button class="nav-item" data-view="map">
+                    <i data-lucide="map"></i>
+                    <span class="nav-label">Hazard Map</span>
+                </button>
+                <button class="nav-item" data-view="register">
+                    <i data-lucide="clipboard-list"></i>
+                    <span class="nav-label">Detection Register</span>
+                </button>
+                <button class="nav-item" data-view="upload">
+                    <i data-lucide="upload-cloud"></i>
+                    <span class="nav-label">Upload Sonar</span>
+                </button>
+                <button class="nav-item" data-view="reports">
+                    <i data-lucide="file-text"></i>
+                    <span class="nav-label">Reports</span>
+                </button>
+                <button class="nav-item" data-view="settings">
+                    <i data-lucide="settings"></i>
+                    <span class="nav-label">Settings</span>
+                </button>
+                <button class="nav-item" data-view="console">
+                    <i data-lucide="terminal-square"></i>
+                    <span class="nav-label">Console</span>
+                </button>
+            </nav>
+
+            <div class="sidebar-footer">
+                <span class="live-indicator"></span>
+                <div>
+                    <strong>System Live</strong>
+                    <div>Telemetry online</div>
+                </div>
+            </div>
+        </aside>
+
+        <div class="app-main">
+            <header class="topbar">
+                <div class="topbar-left">
+                    <button class="sidebar-toggle" id="mobileSidebarToggle" aria-label="Open sidebar">
+                        <i data-lucide="menu" class="w-4 h-4"></i>
+                    </button>
+                    <div class="topbar-text">
+                        <span class="topbar-kicker">Marine Monitoring Console</span>
+                        <h2 id="pageTitle">Dashboard</h2>
+                    </div>
+                </div>
+
+                <div class="topbar-actions">
+                    <div class="status-chip"><span class="live-indicator"></span> AUV Telemetry: <strong>ONLINE</strong></div>
+                    <div class="status-chip"><i data-lucide="compass" class="w-3.5 h-3.5 text-cyan-400"></i> Heading: <strong>142° SE</strong></div>
+                    <div class="status-chip"><i data-lucide="gauge" class="w-3.5 h-3.5 text-cyan-400"></i> Swath Depth: <strong>42.5m</strong></div>
+                    <button id="exportBtn" class="export-btn">
+                        <i data-lucide="download" class="w-4 h-4"></i>
+                        <span>Export Report</span>
+                    </button>
+                </div>
+            </header>
+
+            <div class="workspace-shell">
+                <section class="app-view dashboard-page active" id="dashboardPage" data-page="dashboard">
+                    <section class="px-0 pt-0 max-w-[1920px] mx-auto w-full">
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <div class="bg-navy-900 border border-slate-800 rounded-xl p-4 flex items-center justify-between">
+                                <div>
+                                    <p class="text-[10px] uppercase tracking-wider text-slate-400 font-mono">Total Detections</p>
+                                    <p id="summaryDetectionCount" class="text-2xl font-bold text-cyan-400 mt-1">03</p>
+                                    <p class="text-[10px] text-slate-500 mt-1">Hazards identified</p>
+                                </div>
+                                <div class="p-3 rounded-lg bg-cyan-500/10 border border-cyan-500/20">
+                                    <i data-lucide="scan-search" class="w-5 h-5 text-cyan-400"></i>
+                                </div>
+                            </div>
+
+                            <div class="bg-navy-900 border border-slate-800 rounded-xl p-4 flex items-center justify-between">
+                                <div>
+                                    <p class="text-[10px] uppercase tracking-wider text-slate-400 font-mono">Avg. Confidence</p>
+                                    <p class="text-2xl font-bold text-emerald-400 mt-1">91%</p>
+                                    <p class="text-[10px] text-slate-500 mt-1">AI detection confidence</p>
+                                </div>
+                                <div class="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+                                    <i data-lucide="badge-check" class="w-5 h-5 text-emerald-400"></i>
+                                </div>
+                            </div>
+
+                            <div class="bg-navy-900 border border-slate-800 rounded-xl p-4 flex items-center justify-between">
+                                <div>
+                                    <p class="text-[10px] uppercase tracking-wider text-slate-400 font-mono">Survey Depth</p>
+                                    <p class="text-2xl font-bold text-amber-400 mt-1">42.5m</p>
+                                    <p class="text-[10px] text-slate-500 mt-1">Current swath depth</p>
+                                </div>
+                                <div class="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+                                    <i data-lucide="waves" class="w-5 h-5 text-amber-400"></i>
+                                </div>
+                            </div>
+
+                            <div class="bg-navy-900 border border-slate-800 rounded-xl p-4 flex items-center justify-between">
+                                <div>
+                                    <p class="text-[10px] uppercase tracking-wider text-slate-400 font-mono">System Status</p>
+                                    <p class="text-2xl font-bold text-emerald-400 mt-1">ONLINE</p>
+                                    <p class="text-[10px] text-slate-500 mt-1">AUV telemetry active</p>
+                                </div>
+                                <div class="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+                                    <i data-lucide="radio" class="w-5 h-5 text-emerald-400"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <main class="flex-1 p-0 pt-3 grid grid-cols-1 lg:grid-cols-12 gap-3 max-w-[1920px] mx-auto w-full main-dashboard">
+                        <section class="lg:col-span-7 flex flex-col space-y-4 sonar-panel">
+                            <div class="bg-navy-900 border border-slate-800 rounded-xl p-4">
+                                <div class="flex flex-wrap items-center justify-between gap-4">
+                                    <div class="flex items-center space-x-3">
+                                        <label class="cursor-pointer bg-navy-800 hover:bg-navy-700 border border-cyan-500/40 text-cyan-300 px-3 py-2 rounded-lg text-xs font-semibold flex items-center space-x-2 transition">
+                                            <i data-lucide="upload-cloud" class="w-4 h-4"></i>
+                                            <span>Upload .XTF / .JSF Sonar File</span>
+                                            <input type="file" id="fileUpload" class="hidden" accept=".xtf,.jsf,.png,.jpg,.jpeg">
+                                        </label>
+                                        <span id="fileName" class="text-xs text-slate-400 font-mono italic">Demo_Swath_0042.xtf</span>
+                                    </div>
+
+                                    <div class="flex items-center space-x-4 text-xs font-mono">
+                                        <label class="flex items-center space-x-2 cursor-pointer">
+                                            <input type="checkbox" id="speckleFilter" checked class="rounded accent-cyan-400 bg-navy-950 border-slate-700">
+                                            <span class="text-slate-300">Lee Noise Filter</span>
+                                        </label>
+                                        <label class="flex items-center space-x-2 cursor-pointer">
+                                            <input type="checkbox" id="shadowCheck" checked class="rounded accent-cyan-400 bg-navy-950 border-slate-700">
+                                            <span class="text-slate-300">Shadow Match Engine</span>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <div class="mt-4 pt-3 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3">
+                                    <div class="flex items-center space-x-2">
+                                        <span class="text-[10px] text-slate-500 font-mono uppercase">Display</span>
+                                        <button class="px-3 py-1.5 rounded-md bg-navy-800 border border-slate-700 text-[10px] font-mono text-slate-300 hover:border-cyan-500/40 transition">Live Feed</button>
+                                        <button class="px-3 py-1.5 rounded-md bg-navy-800 border border-slate-700 text-[10px] font-mono text-slate-300 hover:border-cyan-500/40 transition">Detection View</button>
+                                    </div>
+
+                                    <div class="flex items-center space-x-2">
+                                        <span class="text-[10px] text-slate-500 font-mono">RANGE</span>
+                                        <span class="text-[10px] font-mono text-cyan-400 bg-navy-950 border border-slate-800 px-2 py-1 rounded">100m SWATH</span>
+                                        <span class="text-[10px] font-mono text-slate-400">•</span>
+                                        <span class="text-[10px] font-mono text-emerald-400">PROCESSING READY</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="bg-navy-900 border border-slate-800 rounded-xl p-4 flex-1 flex flex-col relative overflow-hidden">
+                                <div class="flex items-center justify-between mb-2">
+                                    <div class="flex items-center space-x-2">
+                                        <span class="h-2.5 w-2.5 rounded-full bg-cyan-400 animate-pulse"></span>
+                                        <h2 class="text-sm font-semibold text-slate-200">Acoustic Waterfall Feed (Side-Scan Sonar Channel)</h2>
+                                    </div>
+                                    <div class="flex items-center space-x-3 text-xs text-slate-400 font-mono">
+                                        <span>Range: 50m Starboard / 50m Port</span>
+                                        <span id="fpsCounter" class="bg-navy-950 px-2 py-0.5 rounded border border-slate-800 text-cyan-400">FPS: 30</span>
+                                    </div>
+                                </div>
+
+                                <div class="relative flex-1 bg-black rounded-lg border border-slate-800 overflow-hidden flex items-center justify-center sonar-stream select-none" id="sonarCanvasContainer">
+                                    <div class="absolute inset-0 bg-gradient-to-b from-amber-950/20 via-yellow-900/30 to-amber-950/20" style="background-image: radial-gradient(circle at 50% 50%, rgba(217, 119, 6, 0.15) 0%, rgba(0,0,0,0.85) 100%), linear-gradient(0deg, rgba(180, 83, 9, 0.1) 1px, transparent 1px); background-size: 100% 100%, 100% 12px;"></div>
+
+                                    <div class="absolute inset-y-0 left-1/2 -translate-x-1/2 w-8 bg-slate-950/90 border-x border-amber-500/30 flex flex-col justify-between items-center py-2 z-10 text-[9px] font-mono text-amber-500/70">
+                                        <span>ALT 12m</span>
+                                        <i data-lucide="arrow-down" class="w-3 h-3 text-amber-500 animate-bounce"></i>
+                                        <span>TRACK</span>
+                                    </div>
+
+                                    <div class="absolute inset-0 flex justify-between px-12 pointer-events-none text-[9px] font-mono text-amber-500/40">
+                                        <div class="border-r border-amber-500/10 h-full flex flex-col justify-between py-2"><span>-50m</span><span>-25m</span><span>0m</span></div>
+                                        <div class="border-l border-amber-500/10 h-full flex flex-col justify-between py-2"><span>0m</span><span>+25m</span><span>+50m</span></div>
+                                    </div>
+
+                                    <div class="absolute top-16 left-16 md:left-24 border-2 border-emerald-400 bg-emerald-500/10 rounded p-1 backdrop-blur-[1px] transition-all duration-300 hover:scale-105 group cursor-pointer" onclick="highlightMapMarker(0)">
+                                        <div class="absolute -top-6 left-0 bg-emerald-500 text-slate-950 font-mono text-[10px] px-1.5 py-0.5 font-bold rounded flex items-center space-x-1 whitespace-nowrap">
+                                            <span>Ghost Net (94%)</span>
+                                        </div>
+                                        <div class="w-24 h-16 border border-dashed border-emerald-300/50 flex items-center justify-center">
+                                            <div class="w-8 h-8 bg-amber-200/80 blur-[1px] rounded-full shadow-[12px_12px_15px_rgba(0,0,0,0.95)]"></div>
+                                        </div>
+                                    </div>
+
+                                    <div class="absolute bottom-20 right-20 md:right-32 border-2 border-cyan-400 bg-cyan-500/10 rounded p-1 backdrop-blur-[1px] transition-all duration-300 hover:scale-105 group cursor-pointer" onclick="highlightMapMarker(1)">
+                                        <div class="absolute -top-6 left-0 bg-cyan-400 text-slate-950 font-mono text-[10px] px-1.5 py-0.5 font-bold rounded flex items-center space-x-1 whitespace-nowrap">
+                                            <span>Tire Stack (88%)</span>
+                                        </div>
+                                        <div class="w-16 h-16 border border-dashed border-cyan-300/50 flex items-center justify-center">
+                                            <div class="w-6 h-6 border-4 border-amber-100/90 rounded-full blur-[0.5px] shadow-[10px_10px_12px_rgba(0,0,0,0.95)]"></div>
+                                        </div>
+                                    </div>
+
+                                    <div class="absolute top-1/3 right-12 border-2 border-amber-400 bg-amber-500/10 rounded p-1 backdrop-blur-[1px] transition-all duration-300 hover:scale-105 group cursor-pointer" onclick="highlightMapMarker(2)">
+                                        <div class="absolute -top-6 left-0 bg-amber-400 text-slate-950 font-mono text-[10px] px-1.5 py-0.5 font-bold rounded flex items-center space-x-1 whitespace-nowrap">
+                                            <span>Metal Structure (91%)</span>
+                                        </div>
+                                        <div class="w-20 h-28 border border-dashed border-amber-300/50 flex items-center justify-center">
+                                            <div class="w-10 h-20 bg-amber-100/80 rotate-12 blur-[0.5px] shadow-[18px_18px_20px_rgba(0,0,0,0.98)]"></div>
+                                        </div>
+                                    </div>
+
+                                    <div class="absolute inset-x-0 h-1 bg-cyan-400/80 shadow-[0_0_15px_#06b6d4] animate-pulse top-1/2 -translate-y-1/2 pointer-events-none"></div>
+                                </div>
+
+                                <div class="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2 text-center text-xs font-mono">
+                                    <div class="bg-navy-950 p-2 rounded border border-slate-800">
+                                        <span class="text-slate-400 block text-[10px]">PING RATE</span>
+                                        <span class="text-cyan-400 font-bold">12 Hz</span>
+                                    </div>
+                                    <div class="bg-navy-950 p-2 rounded border border-slate-800">
+                                        <span class="text-slate-400 block text-[10px]">SPECKLE NOISE</span>
+                                        <span class="text-emerald-400 font-bold">-18.4 dB</span>
+                                    </div>
+                                    <div class="bg-navy-950 p-2 rounded border border-slate-800">
+                                        <span class="text-slate-400 block text-[10px]">LATITUDE</span>
+                                        <span class="text-slate-200 font-bold">12.9716° N</span>
+                                    </div>
+                                    <div class="bg-navy-950 p-2 rounded border border-slate-800">
+                                        <span class="text-slate-400 block text-[10px]">LONGITUDE</span>
+                                        <span class="text-slate-200 font-bold">77.5946° E</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+
+                        <section class="lg:col-span-5 flex flex-col space-y-3 right-stack">
+                            <div class="bg-navy-900 border border-slate-800 rounded-xl p-4 flex flex-col map-panel">
+                                <div class="flex items-center justify-between mb-3">
+                                    <div class="flex items-center space-x-2">
+                                        <i data-lucide="map-pin" class="w-4 h-4 text-cyan-400"></i>
+                                        <h2 class="text-sm font-semibold text-slate-200">Real-Time Geotagged Hazard Map</h2>
+                                    </div>
+                                    <span class="text-[10px] font-mono bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 px-2 py-0.5 rounded">GPS Ping Matched</span>
+                                </div>
+                                <div id="map" class="w-full flex-1 rounded-lg border border-slate-800 min-h-[220px]"></div>
+                            </div>
+
+                            <div class="bg-navy-900 border border-slate-800 rounded-xl p-4 flex flex-col detection-panel">
+                                <div class="flex items-center justify-between mb-3">
+                                    <div class="flex items-center space-x-2">
+                                        <i data-lucide="shield-alert" class="w-4 h-4 text-amber-400"></i>
+                                        <h2 class="text-sm font-semibold text-slate-200">Validated Detection Register</h2>
+                                    </div>
+                                    <span class="text-xs font-mono text-slate-400"><span id="targetCount" class="text-cyan-400 font-bold">3</span> Hazards Identified</span>
+                                </div>
+
+                                <div class="overflow-y-auto flex-1 min-h-0 pr-1 space-y-2" id="detectionList">
+                                    <div class="bg-navy-950 border border-slate-800 hover:border-emerald-500/50 p-3 rounded-lg flex items-center justify-between transition cursor-pointer group" onclick="focusOnHazard(12.9716, 77.5946)">
+                                        <div class="flex items-center space-x-3">
+                                            <div class="p-2 bg-emerald-500/10 text-emerald-400 rounded-md border border-emerald-500/20">
+                                                <i data-lucide="anchor" class="w-4 h-4"></i>
+                                            </div>
+                                            <div>
+                                                <h4 class="text-xs font-bold text-slate-200 group-hover:text-emerald-400 transition">Discarded Fishing Net (Ghost Net)</h4>
+                                                <p class="text-[10px] font-mono text-slate-400">Coordinates: 12.9716° N, 77.5946° E</p>
+                                            </div>
+                                        </div>
+                                        <div class="text-right font-mono">
+                                            <span class="inline-block px-2 py-0.5 text-[10px] bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 rounded font-bold">94% Conf</span>
+                                            <span class="block text-[9px] text-slate-500 mt-0.5">Est Size: 4.2m²</span>
+                                        </div>
+                                    </div>
+
+                                    <div class="bg-navy-950 border border-slate-800 hover:border-cyan-500/50 p-3 rounded-lg flex items-center justify-between transition cursor-pointer group" onclick="focusOnHazard(12.9728, 77.5960)">
+                                        <div class="flex items-center space-x-3">
+                                            <div class="p-2 bg-cyan-500/10 text-cyan-400 rounded-md border border-cyan-500/20">
+                                                <i data-lucide="disc" class="w-4 h-4"></i>
+                                            </div>
+                                            <div>
+                                                <h4 class="text-xs font-bold text-slate-200 group-hover:text-cyan-400 transition">Submerged Rubber Tires / Waste</h4>
+                                                <p class="text-[10px] font-mono text-slate-400">Coordinates: 12.9728° N, 77.5960° E</p>
+                                            </div>
+                                        </div>
+                                        <div class="text-right font-mono">
+                                            <span class="inline-block px-2 py-0.5 text-[10px] bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 rounded font-bold">88% Conf</span>
+                                            <span class="block text-[9px] text-slate-500 mt-0.5">Est Size: 1.8m²</span>
+                                        </div>
+                                    </div>
+
+                                    <div class="bg-navy-950 border border-slate-800 hover:border-amber-500/50 p-3 rounded-lg flex items-center justify-between transition cursor-pointer group" onclick="focusOnHazard(12.9702, 77.5921)">
+                                        <div class="flex items-center space-x-3">
+                                            <div class="p-2 bg-amber-500/10 text-amber-400 rounded-md border border-amber-500/20">
+                                                <i data-lucide="box" class="w-4 h-4"></i>
+                                            </div>
+                                            <div>
+                                                <h4 class="text-xs font-bold text-slate-200 group-hover:text-amber-400 transition">Sunken Metallic Vessel Frame</h4>
+                                                <p class="text-[10px] font-mono text-slate-400">Coordinates: 12.9702° N, 77.5921° E</p>
+                                            </div>
+                                        </div>
+                                        <div class="text-right font-mono">
+                                            <span class="inline-block px-2 py-0.5 text-[10px] bg-amber-500/10 border border-amber-500/30 text-amber-400 rounded font-bold">91% Conf</span>
+                                            <span class="block text-[9px] text-slate-500 mt-0.5">Est Size: 3.7m²</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+                    </main>
+                </section>
+
+                <section class="app-view" data-page="sonar">
+                    <div class="page-panel">
+                        <div class="page-header">
+                            <h3>Sonar Analysis</h3>
+                            <span class="page-pill"><i data-lucide="radar" class="w-3 h-3"></i> Live Feed</span>
+                        </div>
+                        <div id="sonarPageHost"></div>
+                    </div>
+                </section>
+
+                <section class="app-view" data-page="map">
+                    <div class="page-panel">
+                        <div class="page-header">
+                            <h3>Geotagged Hazard Map</h3>
+                            <span class="page-pill"><i data-lucide="map" class="w-3 h-3"></i> GPS Sync</span>
+                        </div>
+                        <div id="mapPageHost" class="w-full min-h-[520px]"></div>
+                    </div>
+                </section>
+
+                <section class="app-view" data-page="register">
+                    <div class="page-panel">
+                        <div class="page-header">
+                            <h3>Validated Detection Register</h3>
+                            <span class="page-pill"><i data-lucide="shield-alert" class="w-3 h-3"></i> Active</span>
+                        </div>
+                        <div id="registerPageHost"></div>
+                    </div>
+                </section>
+
+                <section class="app-view" data-page="upload">
+                    <div class="page-panel">
+                        <div class="page-header">
+                            <h3>Upload Sonar</h3>
+                            <span class="page-pill"><i data-lucide="upload-cloud" class="w-3 h-3"></i> File Intake</span>
+                        </div>
+                        <div class="upload-dropzone" style="min-height: 360px;">
+                            <div class="icon-wrap">
+                                <i data-lucide="upload-cloud" class="w-7 h-7"></i>
+                            </div>
+                            <div>
+                                <div class="text-xl font-bold text-white">Upload Sonar File</div>
+                                <div class="text-sm text-slate-400">Supported: .XTF, .JSF, .PNG, .JPG</div>
+                            </div>
+                            <label class="file-upload-inline">
+                                <span>Choose File</span>
+                                <input type="file" id="pageUploadInput" accept=".xtf,.jsf,.png,.jpg,.jpeg">
+                            </label>
+                            <div class="upload-file-meta">
+                                <span>Current file:</span>
+                                <span id="pageFileName" class="text-cyan-300 font-mono">Demo_Swath_0042.xtf</span>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="app-view" data-page="reports">
+                    <div class="page-panel">
+                        <div class="page-header">
+                            <h3>Reports</h3>
+                            <span class="page-pill"><i data-lucide="file-text" class="w-3 h-3"></i> Export Ready</span>
+                        </div>
+                        <div class="bg-navy-900 border border-slate-800 rounded-xl p-5">
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                <div class="report-metric">
+                                    <small>Total Detections</small>
+                                    <strong>03</strong>
+                                </div>
+                                <div class="report-metric">
+                                    <small>Avg Confidence</small>
+                                    <strong>91%</strong>
+                                </div>
+                                <div class="report-metric">
+                                    <small>Swath Depth</small>
+                                    <strong>42.5m</strong>
+                                </div>
+                                <div class="report-metric">
+                                    <small>System</small>
+                                    <strong>Online</strong>
+                                </div>
+                            </div>
+                            <div class="report-actions justify-start mt-5">
+                                <button class="primary-btn" id="pageExportBtn">Export Report</button>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="app-view" data-page="settings">
+                    <div class="page-panel">
+                        <div class="page-header">
+                            <h3>Settings</h3>
+                            <span class="page-pill"><i data-lucide="settings" class="w-3 h-3"></i> Console</span>
+                        </div>
+                        <div class="bg-navy-900 border border-slate-800 rounded-xl p-5 space-y-3">
+                            <div class="flex items-center justify-between border border-slate-800 rounded-lg p-3">
+                                <div>
+                                    <div class="font-semibold text-slate-100">Auto refresh</div>
+                                    <div class="text-xs text-slate-400">Keep live monitoring synchronized</div>
+                                </div>
+                                <input type="checkbox" id="settingAutoRefresh" checked class="rounded accent-cyan-400">
+                            </div>
+                            <div class="flex items-center justify-between border border-slate-800 rounded-lg p-3">
+                                <div>
+                                    <div class="font-semibold text-slate-100">Sonar display</div>
+                                    <div class="text-xs text-slate-400">Live feed preference</div>
+                                </div>
+                                <select id="settingSonarDisplay" class="rounded-md bg-slate-950 border border-slate-700 px-2 py-1 text-xs text-slate-200">
+                                    <option>Live Feed</option>
+                                    <option>Detection View</option>
+                                    <option>Hybrid</option>
+                                </select>
+                            </div>
+                            <div class="flex items-center justify-between border border-slate-800 rounded-lg p-3">
+                                <div>
+                                    <div class="font-semibold text-slate-100">Map display</div>
+                                    <div class="text-xs text-slate-400">Hazard overlay preference</div>
+                                </div>
+                                <select id="settingMapDisplay" class="rounded-md bg-slate-950 border border-slate-700 px-2 py-1 text-xs text-slate-200">
+                                    <option>Standard</option>
+                                    <option>Focus Mode</option>
+                                    <option>Dense Overlay</option>
+                                </select>
+                            </div>
+                            <div class="flex items-center justify-between border border-slate-800 rounded-lg p-3">
+                                <div>
+                                    <div class="font-semibold text-slate-100">Notifications</div>
+                                    <div class="text-xs text-slate-400">Alert and mission notifications</div>
+                                </div>
+                                <input type="checkbox" id="settingNotifications" checked class="rounded accent-cyan-400">
+                            </div>
+                            <div class="flex items-center justify-between border border-slate-800 rounded-lg p-3">
+                                <div>
+                                    <div class="font-semibold text-slate-100">Display density</div>
+                                    <div class="text-xs text-slate-400">Compact or normal console layout</div>
+                                </div>
+                                <select id="settingDensity" class="rounded-md bg-slate-950 border border-slate-700 px-2 py-1 text-xs text-slate-200">
+                                    <option>Normal</option>
+                                    <option>Compact</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="app-view" data-page="console">
+                    <div class="page-panel">
+                        <div class="page-header">
+                            <h3>Console</h3>
+                            <span class="page-pill"><i data-lucide="terminal-square" class="w-3 h-3"></i> Live</span>
+                        </div>
+                        <div class="bg-navy-900 border border-slate-800 rounded-xl p-4">
+                            <div class="mb-3 flex items-center justify-between">
+                                <div class="text-sm font-semibold text-slate-100">Application Console</div>
+                                <span class="text-[10px] font-mono uppercase text-emerald-300">System Healthy</span>
+                            </div>
+                            <div class="space-y-2 font-mono text-xs text-slate-300">
+                                <div class="border border-slate-800 bg-navy-950 rounded-lg px-3 py-2">[INFO] AquaVision AI initialized successfully.</div>
+                                <div class="border border-slate-800 bg-navy-950 rounded-lg px-3 py-2">[INFO] Telemetry stream active. Last sync: 00:12:04 UTC.</div>
+                                <div class="border border-slate-800 bg-navy-950 rounded-lg px-3 py-2">[INFO] 3 hazard detections loaded from active survey context.</div>
+                                <div class="border border-slate-800 bg-navy-950 rounded-lg px-3 py-2">[INFO] Leaflet map ready. GPS markers synchronized.</div>
+                                <div class="border border-slate-800 bg-navy-950 rounded-lg px-3 py-2">[INFO] Report export module ready. PDF generation service online.</div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </div>
+    </div>
+
+    <div id="uploadModal" class="modal-backdrop" aria-hidden="true">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h4>Upload Sonar File</h4>
+                <button class="modal-close" data-close="uploadModal" aria-label="Close upload modal">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="upload-dropzone">
+                    <div class="icon-wrap">
+                        <i data-lucide="upload-cloud" class="w-7 h-7"></i>
+                    </div>
+                    <div>
+                        <div class="text-lg font-bold text-white">Upload Sonar File</div>
+                        <div class="text-sm text-slate-400">Supported: .XTF, .JSF, .PNG, .JPG</div>
+                    </div>
+                    <label class="file-upload-inline">
+                        <span>Choose File</span>
+                        <input type="file" id="uploadModalInput" accept=".xtf,.jsf,.png,.jpg,.jpeg">
+                    </label>
+                    <div class="upload-file-meta">
+                        <span>Current file:</span>
+                        <span id="modalFileName" class="text-cyan-300 font-mono">Demo_Swath_0042.xtf</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="reportModal" class="modal-backdrop" aria-hidden="true">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h4>Export Report</h4>
+                <button class="modal-close" data-close="reportModal" aria-label="Close report modal">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p class="text-slate-300 text-sm">Generate a mission-ready extract of the current detection and sonar review state for the active survey.</p>
+                <div class="report-grid">
+                    <div class="report-metric">
+                        <small>Total Detections</small>
+                        <strong>03</strong>
+                    </div>
+                    <div class="report-metric">
+                        <small>Avg Confidence</small>
+                        <strong>91%</strong>
+                    </div>
+                    <div class="report-metric">
+                        <small>Swath Depth</small>
+                        <strong>42.5m</strong>
+                    </div>
+                    <div class="report-metric">
+                        <small>System</small>
+                        <strong>Online</strong>
+                    </div>
+                </div>
+                <div class="report-actions">
+                    <button class="secondary-btn" data-close="reportModal">Cancel</button>
+                    <button class="primary-btn" id="generateReportBtn">Generate PDF</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function initMap() {
+            if (!window.L) return;
+
+            const mapContainer = document.getElementById('map');
+            if (!mapContainer) return;
+
+            if (window.aquaMap) {
+                window.aquaMap.remove();
+            }
+
+            const map = L.map('map', {
+                zoomControl: true,
+                attributionControl: true,
+                scrollWheelZoom: true,
+                preferCanvas: true
+            }).setView([12.9718, 77.5945], 12);
+
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; OpenStreetMap contributors'
+            }).addTo(map);
+
+            const hazardPoints = [
+                { lat: 12.9716, lng: 77.5946, title: 'Ghost Net', color: '#34d399', confidence: '94%', size: '4.2m²' },
+                { lat: 12.9728, lng: 77.5960, title: 'Tire Stack', color: '#22d3ee', confidence: '88%', size: '1.8m²' },
+                { lat: 12.9702, lng: 77.5921, title: 'Metal Structure', color: '#fbbf24', confidence: '91%', size: '3.7m²' }
+            ];
+
+            window.aquaMapMarkers = [];
+
+            hazardPoints.forEach((point, index) => {
+                const marker = L.circleMarker([point.lat, point.lng], {
+                    radius: 9,
+                    color: point.color,
+                    fillColor: point.color,
+                    fillOpacity: 0.9,
+                    weight: 2
+                }).addTo(map);
+
+                marker.bindPopup(`
+                    <div style="color:#0f172a; font-weight:700; line-height:1.4;">
+                        <div>${point.title}</div>
+                        <div style="font-size:11px; margin-top:4px;">Confidence: ${point.confidence}</div>
+                        <div style="font-size:11px;">Size: ${point.size}</div>
+                        <div style="font-size:11px; margin-top:4px;">${point.lat.toFixed(4)}° N, ${point.lng.toFixed(4)}° E</div>
+                    </div>
+                `);
+
+                window.aquaMapMarkers.push({ index, marker, lat: point.lat, lng: point.lng, title: point.title, confidence: point.confidence, size: point.size });
+            });
+
+            window.aquaMap = map;
+            setTimeout(() => {
+                if (window.aquaMap) {
+                    window.aquaMap.invalidateSize();
+                }
+            }, 200);
+        }
+
+        function focusOnHazard(lat, lng) {
+            if (!window.aquaMap) return;
+            window.aquaMap.flyTo([lat, lng], 14, { duration: 1.2 });
+        }
+
+        function highlightMapMarker(index) {
+            if (!window.aquaMapMarkers) return;
+            const target = window.aquaMapMarkers[index];
+            if (!target) return;
+            target.marker.openPopup();
+            focusOnHazard(target.lat, target.lng);
+        }
+
+        function ensureMapVisible() {
+            if (!window.aquaMap) return;
+            setTimeout(() => {
+                window.aquaMap.invalidateSize();
+            }, 180);
+        }
+
+        function generateReportPdf() {
+            const pdfLib = window.jspdf && window.jspdf.jsPDF;
+            if (!pdfLib) {
+                console.error('jsPDF library not available.');
+                return;
+            }
+
+            const doc = new pdfLib({ unit: 'pt', format: 'a4' });
+            const pageWidth = doc.internal.pageSize.getWidth();
+            const margin = 50;
+            let y = 60;
+
+            doc.setFillColor(7, 18, 31);
+            doc.rect(0, 0, pageWidth, 842, 'F');
+            doc.setTextColor(240, 248, 255);
+            doc.setFontSize(22);
+            doc.text('AquaVision AI Hazard Report', margin, y);
+            y += 36;
+
+            doc.setTextColor(103, 232, 249);
+            doc.setFontSize(11);
+            doc.text('Marine Debris & Anomaly Detection System', margin, y);
+            y += 28;
+
+            doc.setTextColor(248, 250, 252);
+            doc.setFontSize(12);
+            doc.text('Survey depth: 42.5m', margin, y);
+            y += 22;
+            doc.text('Total detections: 03', margin, y);
+            y += 22;
+            doc.text('Average confidence: 91%', margin, y);
+            y += 32;
+
+            const detections = [
+                { title: 'Discarded Fishing Net (Ghost Net)', coords: '12.9716° N, 77.5946° E', confidence: '94%', size: '4.2m²' },
+                { title: 'Submerged Rubber Tires / Waste', coords: '12.9728° N, 77.5960° E', confidence: '88%', size: '1.8m²' },
+                { title: 'Sunken Metallic Vessel Frame', coords: '12.9702° N, 77.5921° E', confidence: '91%', size: '3.7m²' }
+            ];
+
+            doc.setTextColor(103, 232, 249);
+            doc.text('Detected Hazards', margin, y);
+            y += 18;
+
+            detections.forEach((item, index) => {
+                doc.setTextColor(248, 250, 252);
+                doc.setFontSize(11);
+                doc.text(`${index + 1}. ${item.title}`, margin, y);
+                y += 18;
+                doc.setTextColor(191, 219, 254);
+                doc.text(`Location: ${item.coords}`, margin + 12, y);
+                y += 16;
+                doc.text(`Confidence: ${item.confidence}   Size: ${item.size}`, margin + 12, y);
+                y += 22;
+            });
+
+            doc.setTextColor(134, 239, 172);
+            doc.text('Status: System online and telemetry active.', margin, y + 12);
+
+            doc.save('AquaVision_Hazard_Report.pdf');
+        }
+
+        document.addEventListener('DOMContentLoaded', function () {
+            if (window.lucide) {
+                lucide.createIcons();
+            }
+
+            const viewLookup = {
+                dashboard: 'Dashboard',
+                sonar: 'Sonar Analysis',
+                map: 'Geotagged Hazard Map',
+                register: 'Validated Detection Register',
+                upload: 'Upload Sonar',
+                reports: 'Reports',
+                settings: 'Settings',
+                console: 'Console'
+            };
+
+            const sidebar = document.getElementById('sidebar');
+            const mobileSidebarToggle = document.getElementById('mobileSidebarToggle');
+            const sidebarToggle = document.getElementById('sidebarToggle');
+            const pageTitle = document.getElementById('pageTitle');
+            const exportBtn = document.getElementById('exportBtn');
+            const pageExportBtn = document.getElementById('pageExportBtn');
+            const reportModal = document.getElementById('reportModal');
+            const uploadModal = document.getElementById('uploadModal');
+            const navItems = document.querySelectorAll('.nav-item');
+            const appSections = document.querySelectorAll('.app-view');
+            const fileInput = document.getElementById('fileUpload');
+            const pageUploadInput = document.getElementById('pageUploadInput');
+            const uploadModalInput = document.getElementById('uploadModalInput');
+            const dashboardPage = document.getElementById('dashboardPage');
+            const dashboardMain = dashboardPage ? dashboardPage.querySelector('.main-dashboard') : null;
+            const dashboardSonar = dashboardMain ? dashboardMain.querySelector('.sonar-panel') : null;
+            const dashboardRight = dashboardMain ? dashboardMain.querySelector('.right-stack') : null;
+            const dashboardMapCard = dashboardRight ? dashboardRight.querySelector('.map-panel') : null;
+            const dashboardRegisterCard = dashboardRight ? dashboardRight.querySelector('.detection-panel') : null;
+            const sonarPageHost = document.getElementById('sonarPageHost');
+            const mapPageHost = document.getElementById('mapPageHost');
+            const registerPageHost = document.getElementById('registerPageHost');
+
+            function synchroniseFileNameDisplay(fileNameValue) {
+                const finalName = fileNameValue || 'Demo_Swath_0042.xtf';
+                const fileLabel = document.getElementById('fileName');
+                const modalFileName = document.getElementById('modalFileName');
+                const pageFileName = document.getElementById('pageFileName');
+                if (fileLabel) fileLabel.textContent = finalName;
+                if (modalFileName) modalFileName.textContent = finalName;
+                if (pageFileName) pageFileName.textContent = finalName;
+            }
+
+            function restoreDashboardLayout() {
+                if (!dashboardPage || !dashboardMain) return;
+
+                if (dashboardSonar && !dashboardMain.contains(dashboardSonar)) {
+                    dashboardMain.prepend(dashboardSonar);
+                }
+
+                if (dashboardRight && dashboardMapCard && !dashboardRight.contains(dashboardMapCard)) {
+                    dashboardRight.prepend(dashboardMapCard);
+                }
+
+                if (dashboardRight && dashboardRegisterCard && !dashboardRight.contains(dashboardRegisterCard)) {
+                    dashboardRight.appendChild(dashboardRegisterCard);
+                }
+            }
+
+            function moveDashboardCardsForPage(pageName) {
+                if (pageName === 'dashboard') {
+                    restoreDashboardLayout();
+                    return;
+                }
+
+                if (pageName === 'sonar' && dashboardSonar && sonarPageHost) {
+                    sonarPageHost.innerHTML = '';
+                    sonarPageHost.appendChild(dashboardSonar);
+                }
+
+                if (pageName === 'map' && dashboardMapCard && mapPageHost) {
+                    mapPageHost.innerHTML = '';
+                    mapPageHost.appendChild(dashboardMapCard);
+                }
+
+                if (pageName === 'register' && dashboardRegisterCard && registerPageHost) {
+                    registerPageHost.innerHTML = '';
+                    registerPageHost.appendChild(dashboardRegisterCard);
+                }
+            }
+
+            function applyView(viewName) {
+                const resolved = viewLookup[viewName] ? viewName : 'dashboard';
+                appSections.forEach((section) => {
+                    section.classList.toggle('active', section.dataset.page === resolved);
+                });
+
+                navItems.forEach((button) => {
+                    button.classList.toggle('active', button.dataset.view === resolved);
+                });
+
+                if (pageTitle) pageTitle.textContent = viewLookup[resolved] || 'Dashboard';
+                document.body.dataset.view = resolved;
+
+                if (resolved === 'map' || resolved === 'dashboard') {
+                    ensureMapVisible();
+                }
+
+                if (sidebar && window.innerWidth <= 980) {
+                    sidebar.classList.remove('open');
+                }
+            }
+
+            function openModal(modal) {
+                if (!modal) return;
+                modal.classList.add('open');
+                modal.setAttribute('aria-hidden', 'false');
+            }
+
+            function closeModal(modal) {
+                if (!modal) return;
+                modal.classList.remove('open');
+                modal.setAttribute('aria-hidden', 'true');
+            }
+
+            navItems.forEach((button) => {
+                button.addEventListener('click', function () {
+                    const target = this.dataset.view;
+                    moveDashboardCardsForPage(target);
+                    applyView(target);
+                });
+            });
+
+            if (sidebarToggle) {
+                sidebarToggle.addEventListener('click', function () {
+                    if (!sidebar) return;
+                    sidebar.classList.toggle('collapsed');
+                });
+            }
+
+            if (mobileSidebarToggle) {
+                mobileSidebarToggle.addEventListener('click', function () {
+                    if (!sidebar) return;
+                    sidebar.classList.toggle('open');
+                });
+            }
+
+            if (exportBtn) {
+                exportBtn.addEventListener('click', function () {
+                    openModal(reportModal);
+                });
+            }
+
+            if (pageExportBtn) {
+                pageExportBtn.addEventListener('click', function () {
+                    openModal(reportModal);
+                });
+            }
+
+            document.querySelectorAll('[data-close]').forEach((button) => {
+                button.addEventListener('click', function () {
+                    const targetId = this.getAttribute('data-close');
+                    const modal = targetId ? document.getElementById(targetId) : null;
+                    closeModal(modal);
+                });
+            });
+
+            if (reportModal) {
+                reportModal.addEventListener('click', function (event) {
+                    if (event.target === reportModal) closeModal(reportModal);
+                });
+            }
+
+            if (uploadModal) {
+                uploadModal.addEventListener('click', function (event) {
+                    if (event.target === uploadModal) closeModal(uploadModal);
+                });
+            }
+
+            document.addEventListener('keydown', function (event) {
+                if (event.key === 'Escape') {
+                    closeModal(reportModal);
+                    closeModal(uploadModal);
+                }
+            });
+
+            if (fileInput) {
+                fileInput.addEventListener('change', function () {
+                    const selectedName = this.value.split('\\').pop() || 'Demo_Swath_0042.xtf';
+                    synchroniseFileNameDisplay(selectedName);
+                });
+            }
+
+            if (pageUploadInput) {
+                pageUploadInput.addEventListener('change', function () {
+                    const selectedName = this.value.split('\\').pop() || 'Demo_Swath_0042.xtf';
+                    synchroniseFileNameDisplay(selectedName);
+                });
+            }
+
+            if (uploadModalInput) {
+                uploadModalInput.addEventListener('change', function () {
+                    const selectedName = this.value.split('\\').pop() || 'Demo_Swath_0042.xtf';
+                    synchroniseFileNameDisplay(selectedName);
+                });
+            }
+
+            const uploadActions = document.querySelectorAll('[data-view="upload"]');
+            uploadActions.forEach((button) => {
+                button.addEventListener('click', function () {
+                    openModal(uploadModal);
+                    applyView('upload');
+                });
+            });
+
+            const generateReportBtn = document.getElementById('generateReportBtn');
+            if (generateReportBtn) {
+                generateReportBtn.addEventListener('click', function () {
+                    generateReportPdf();
+                    closeModal(reportModal);
+                });
+            }
+
+            initMap();
+            applyView('dashboard');
+            synchroniseFileNameDisplay();
+        });
+    </script>
+</body>
+</html>
