@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-[#030712] text-slate-100 selection:bg-cyan-500 selection:text-slate-950">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AquaVision OS | Deep Ocean Sonar</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <!-- Leaflet JS & CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Space Grotesk', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        .leaflet-container { background: #020617 !important; font-family: 'JetBrains Mono', monospace; }
+
+        /* Sonar Radar Beam Sweep Keyframe */
+        @keyframes radarSweep {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .animate-radar { animation: radarSweep 8s linear infinite; }
+
+        /* Glowing Pulse Effect */
+        @keyframes targetPulse {
+            0%, 100% { box-shadow: 0 0 15px rgba(34, 211, 238, 0.4), inset 0 0 10px rgba(34, 211, 238, 0.2); }
+            50% { box-shadow: 0 0 30px rgba(34, 211, 238, 0.9), inset 0 0 20px rgba(34, 211, 238, 0.5); }
+        }
+        .glow-target { animation: targetPulse 2.5s ease-in-out infinite; }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: #020617; }
+        ::-webkit-scrollbar-thumb { background: #1e293b; }
+    </style>
+</head>
+<body class="h-full flex flex-col antialiased overflow-hidden font-sans bg-[#020617] text-slate-100">
+
+    <!-- TOP HEADER BAR -->
+    <header class="h-12 bg-slate-950/80 backdrop-blur-md border-b border-cyan-500/20 px-5 flex items-center justify-between text-xs font-mono z-30 shrink-0">
+        <div class="flex items-center space-x-3">
+            <div class="w-3 h-3 rounded-full bg-cyan-400 animate-ping"></div>
+            <span class="text-base font-bold tracking-wider text-white">AQUAVISION <span class="text-cyan-400">AI</span></span>
+            <span class="text-[10px] bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 px-2 py-0.5 rounded-full">MoES_SIH26057</span>
+        </div>
+
+        <div class="flex items-center space-x-6 text-[11px] text-slate-400">
+            <div class="flex items-center space-x-2">
+                <i data-lucide="waves" class="w-4 h-4 text-cyan-400"></i>
+                <span>DEPTH: <strong class="text-slate-100">142.8m</strong></span>
+            </div>
+            <div class="flex items-center space-x-2">
+                <i data-lucide="activity" class="w-4 h-4 text-emerald-400"></i>
+                <span>SONAR STATE: <strong class="text-emerald-400">ACTIVE SWEEP</strong></span>
+            </div>
+            <button id="exportBtn" class="bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 px-3 py-1 rounded-lg flex items-center space-x-2 transition font-bold shadow-[0_0_15px_rgba(6,182,212,0.2)]">
+                <i data-lucide="download" class="w-3.5 h-3.5"></i>
+                <span>EXPORT ANOMALY REPORT</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- MAIN INTERACTIVE WORKSPACE -->
+    <div class="flex-1 grid grid-cols-12 gap-3 p-3 overflow-hidden relative">
+        
+        <!-- LEFT CONTROL DOCK -->
+        <aside class="col-span-3 bg-slate-950/60 backdrop-blur-lg border border-cyan-500/20 rounded-2xl p-4 flex flex-col space-y-4 text-xs z-20">
+            <div>
+                <h3 class="text-cyan-400 font-mono font-bold uppercase tracking-wider text-[11px] mb-2 flex items-center space-x-1.5">
+                    <i data-lucide="file-up" class="w-4 h-4"></i>
+                    <span>Acoustic Dataset Ingestion</span>
+                </h3>
+                <label class="w-full h-24 bg-slate-900/50 hover:bg-slate-900 border-2 border-dashed border-cyan-500/30 hover:border-cyan-400 rounded-xl flex flex-col items-center justify-center cursor-pointer transition group">
+                    <i data-lucide="upload-cloud" class="w-6 h-6 text-cyan-400 group-hover:scale-110 transition mb-1"></i>
+                    <span class="text-slate-300 font-medium text-[11px]">Drop .XTF / .JSF Sonar File</span>
+                    <span class="text-[9px] text-slate-500 font-mono mt-0.5">Supports Dual-Channel Side-Scan</span>
+                    <input type="file" id="fileUpload" class="hidden">
+                </label>
+            </div>
+
+            <hr class="border-cyan-500/10">
+
+            <!-- AI Filters -->
+            <div class="space-y-2.5">
+                <h3 class="text-cyan-400 font-mono font-bold uppercase tracking-wider text-[11px] flex items-center space-x-1.5">
+                    <i data-lucide="sliders" class="w-4 h-4"></i>
+                    <span>Acoustic Pre-Processing</span>
+                </h3>
+                <label class="flex items-center justify-between p-2 bg-slate-900/40 rounded-lg border border-slate-800 text-slate-300 cursor-pointer hover:border-cyan-500/30">
+                    <span>Lee Speckle Denoising</span>
+                    <input type="checkbox" checked class="accent-cyan-400">
+                </label>
+                <label class="flex items-center justify-between p-2 bg-slate-900/40 rounded-lg border border-slate-800 text-slate-300 cursor-pointer hover:border-cyan-500/30">
+                    <span>Acoustic Shadow Lock</span>
+                    <input type="checkbox" checked class="accent-cyan-400">
+                </label>
+            </div>
+
+            <hr class="border-cyan-500/10">
+
+            <!-- Radar Control Overlay -->
+            <div class="flex-1 bg-slate-900/40 rounded-xl border border-cyan-500/10 p-3 relative overflow-hidden flex flex-col justify-between">
+                <div class="flex justify-between items-center text-[10px] font-mono text-cyan-400">
+                    <span>SWEEP RADAR</span>
+                    <span>360° ACOUSTIC</span>
+                </div>
+                <!-- Interactive Mini Radar Canvas -->
+                <div class="w-28 h-28 mx-auto relative rounded-full border border-cyan-500/40 flex items-center justify-center my-2">
+                    <div class="absolute inset-0 rounded-full border border-cyan-500/20 scale-75"></div>
+                    <div class="absolute inset-0 rounded-full border border-cyan-500/20 scale-50"></div>
+                    <div class="absolute w-full h-[1px] bg-cyan-500/30"></div>
+                    <div class="absolute h-full w-[1px] bg-cyan-500/30"></div>
+                    <!-- Rotating Sweep Beam -->
+                    <div class="absolute inset-0 rounded-full bg-[conic-gradient(from_0deg,transparent_0_300deg,rgba(34,211,238,0.4)_360deg)] animate-radar pointer-events-none"></div>
+                </div>
+                <div class="text-[9px] font-mono text-slate-400 text-center">ANOMALY DENSITY: HIGH</div>
+            </div>
+        </aside>
+
+        <!-- CENTER DISPLAY: DEEP OCEAN GRAPHICS & ACOUSTIC WATERFALL -->
+        <main class="col-span-6 bg-slate-950/80 backdrop-blur-lg border border-cyan-500/20 rounded-2xl relative overflow-hidden flex flex-col">
+            
+            <div class="h-9 px-4 border-b border-cyan-500/20 flex items-center justify-between font-mono text-xs z-10 bg-slate-950/60">
+                <span class="text-cyan-400 font-bold flex items-center space-x-2">
+                    <i data-lucide="scan" class="w-4 h-4"></i>
+                    <span>SIDE-SCAN SONAR ACOUSTIC FEED</span>
+                </span>
+                <span class="text-slate-400 text-[10px]">PING RANGE: 50m PORT / 50m STBD</span>
+            </div>
+
+            <!-- Dynamic Particle Canvas View -->
+            <div class="flex-1 relative bg-[#010a15] flex items-center justify-center overflow-hidden" id="viewport">
+                
+                <!-- Background Particle Stream Canvas -->
+                <canvas id="particleCanvas" class="absolute inset-0 w-full h-full pointer-events-none"></canvas>
+
+                <!-- Underwater Seabed Wave Contour Lines (SVG Overlay) -->
+                <svg class="absolute inset-0 w-full h-full opacity-30 pointer-events-none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M 0 100 Q 250 180 500 100 T 1000 120" fill="none" stroke="#06b6d4" stroke-width="1.5" stroke-dasharray="4 4" />
+                    <path d="M 0 300 Q 300 220 600 350 T 1200 280" fill="none" stroke="#06b6d4" stroke-width="1.5" stroke-dasharray="6 6" />
+                </svg>
+
+                <!-- Center Track Nadir Gap -->
+                <div class="absolute inset-y-0 left-1/2 -translate-x-1/2 w-8 bg-slate-950/90 border-x border-cyan-500/30 z-10 flex flex-col justify-between items-center py-4 font-mono text-[8px] text-cyan-500/70">
+                    <span>NADIR</span>
+                    <div class="h-20 w-[1px] bg-cyan-400 animate-pulse shadow-[0_0_10px_#22d3ee]"></div>
+                    <span>TRACK</span>
+                </div>
+
+                <!-- ANOMALY DETECTIONS WITH GRAPHICAL GLOW & SHADOWS -->
+
+                <!-- Target 1: Ghost Net -->
+                <div class="absolute top-16 left-20 border-2 border-cyan-400 bg-slate-950/80 backdrop-blur-md rounded-xl p-2 cursor-pointer transition hover:scale-105 glow-target z-20 group" onclick="highlightHazard(0)">
+                    <div class="flex items-center space-x-1.5 text-cyan-300 font-mono text-[10px] font-bold mb-1">
+                        <span class="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
+                        <span>01. GHOST FISHING NET (95.4%)</span>
+                    </div>
+                    <div class="w-28 h-14 bg-gradient-to-r from-cyan-400/80 to-transparent rounded-lg relative overflow-hidden flex items-center justify-center">
+                        <span class="text-[9px] font-mono text-black font-bold">ACOUSTIC HIGHLIGHT</span>
+                        <!-- Synthetic Trailing Shadow -->
+                        <div class="absolute right-0 top-0 bottom-0 w-12 bg-black/95 blur-[1px]"></div>
+                    </div>
+                </div>
+
+                <!-- Target 2: Rubber Tires -->
+                <div class="absolute bottom-20 right-20 border-2 border-amber-400 bg-slate-950/80 backdrop-blur-md rounded-xl p-2 cursor-pointer transition hover:scale-105 shadow-[0_0_20px_rgba(245,158,11,0.4)] z-20 group" onclick="highlightHazard(1)">
+                    <div class="flex items-center space-x-1.5 text-amber-300 font-mono text-[10px] font-bold mb-1">
+                        <span class="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+                        <span>02. RUBBER TIRE STACK (89.1%)</span>
+                    </div>
+                    <div class="w-24 h-16 bg-gradient-to-r from-amber-300/80 to-transparent rounded-lg relative flex items-center justify-center">
+                        <div class="w-8 h-8 border-4 border-amber-100 rounded-full"></div>
+                        <div class="absolute right-0 top-0 bottom-0 w-10 bg-black/95 blur-[1px]"></div>
+                    </div>
+                </div>
+
+            </div>
+        </main>
+
+        <!-- RIGHT PANEL: GIS MAP & HAZARD LIST -->
+        <aside class="col-span-3 bg-slate-950/60 backdrop-blur-lg border border-cyan-500/20 rounded-2xl flex flex-col overflow-hidden z-20">
+            
+            <!-- GIS Map View -->
+            <div class="h-1/2 border-b border-cyan-500/20 flex flex-col">
+                <div class="h-8 px-3 bg-slate-950/80 flex items-center justify-between text-xs font-mono text-cyan-400 font-bold">
+                    <span>GIS GEOLOCATION</span>
+                    <span class="text-[9px] text-slate-500">EPSG:4326</span>
+                </div>
+                <div id="map" class="flex-1 w-full bg-slate-950"></div>
+            </div>
+
+            <!-- Hazard Logs List -->
+            <div class="h-1/2 p-3 flex flex-col space-y-2 overflow-y-auto font-mono text-xs">
+                <div class="text-[11px] font-bold text-slate-300 mb-1">DETECTED HAZARD LOGS</div>
+
+                <div class="bg-slate-900/60 hover:bg-slate-900 border border-cyan-500/30 rounded-xl p-2.5 transition cursor-pointer" onclick="focusMap(12.9716, 77.5946, 0)">
+                    <div class="flex justify-between font-bold text-cyan-300">
+                        <span>Ghost Fishing Net</span>
+                        <span>95.4%</span>
+                    </div>
+                    <div class="text-[10px] text-slate-400 mt-1">LAT: 12.9716° N | LNG: 77.5946° E</div>
+                </div>
+
+                <div class="bg-slate-900/60 hover:bg-slate-900 border border-amber-500/30 rounded-xl p-2.5 transition cursor-pointer" onclick="focusMap(12.9728, 77.5960, 1)">
+                    <div class="flex justify-between font-bold text-amber-300">
+                        <span>Rubber Tire Stack</span>
+                        <span>89.1%</span>
+                    </div>
+                    <div class="text-[10px] text-slate-400 mt-1">LAT: 12.9728° N | LNG: 77.5960° E</div>
+                </div>
+            </div>
+
+        </aside>
+
+    </div>
+
+    <!-- JAVASCRIPT LOGIC -->
+    <script>
+        lucide.createIcons();
+
+        // Canvas Particle Stream Logic
+        const canvas = document.getElementById('particleCanvas');
+        const ctx = canvas.getContext('2d');
+
+        function resize() {
+            canvas.width = canvas.clientWidth;
+            canvas.height = canvas.clientHeight;
+        }
+        resize();
+        window.addEventListener('resize', resize);
+
+        const particles = Array.from({ length: 60 }, () => ({
+            x: Math.random() * canvas.width,
+            y: Math.random() * canvas.height,
+            size: Math.random() * 2 + 0.5,
+            speedY: Math.random() * 0.8 + 0.2,
+            opacity: Math.random() * 0.5 + 0.2
+        }));
+
+        function animateParticles() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            particles.forEach(p => {
+                p.y += p.speedY;
+                if (p.y > canvas.height) p.y = 0;
+
+                ctx.fillStyle = `rgba(34, 211, 238, ${p.opacity})`;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            requestAnimationFrame(animateParticles);
+        }
+        animateParticles();
+
+        // GIS Map Initialization
+        const map = L.map('map', { zoomControl: false, attributionControl: false }).setView([12.9716, 77.5946], 14);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(map);
+
+        const hazardData = [
+            { lat: 12.9716, lng: 77.5946, label: "Ghost Net" },
+            { lat: 12.9728, lng: 77.5960, label: "Rubber Tires" }
+        ];
+
+        const markers = hazardData.map(h => {
+            return L.circleMarker([h.lat, h.lng], { color: '#06b6d4', fillColor: '#06b6d4', fillOpacity: 0.8, radius: 6 }).addTo(map);
+        });
+
+        function focusMap(lat, lng, idx) {
+            map.flyTo([lat, lng], 16, { duration: 1 });
+        }
+
+        function highlightHazard(idx) {
+            const h = hazardData[idx];
+            focusMap(h.lat, h.lng, idx);
+        }
+
+        document.getElementById('exportBtn').addEventListener('click', () => {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(hazardData, null, 2));
+            const downloadAnchor = document.createElement('a');
+            downloadAnchor.setAttribute("href", dataStr);
+            downloadAnchor.setAttribute("download", "AQUAVISION_HAZARDS.json");
+            document.body.appendChild(downloadAnchor);
+            downloadAnchor.click();
+            downloadAnchor.remove();
+        });
+    </script>
+</body>
+</html>
